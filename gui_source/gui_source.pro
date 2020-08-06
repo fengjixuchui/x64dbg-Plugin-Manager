@@ -68,6 +68,16 @@ FORMS += \
     include(../XArchive/xarchive.pri)
 }
 
+!contains(XCONFIG, xgithub) {
+    XCONFIG += xgithub
+    include(../XGithub/xgithub.pri)
+}
+
+!contains(XCONFIG, xoptions) {
+    XCONFIG += xoptions
+    include(../XOptions/xoptions.pri)
+}
+
 win32 {
     RC_ICONS = ../icons/main.ico
 }

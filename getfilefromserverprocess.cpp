@@ -20,7 +20,7 @@
 //
 #include "getfilefromserverprocess.h"
 
-GetFileFromServerProcess::GetFileFromServerProcess(QObject *parent) : QObject(parent)
+GetFileFromServerProcess::GetFileFromServerProcess(QObject *pParent) : QObject(pParent)
 {
     pReply=0;
     replyRed=0;
@@ -149,6 +149,6 @@ void GetFileFromServerProcess::process()
 
 void GetFileFromServerProcess::_downloadProgress(qint64 bytesReceived, qint64 bytesTotal)
 {
-    currentStats.nTotalFile=bytesTotal;
-    currentStats.nCurrentFile=bytesReceived;
+    currentStats.nTotalBytes=bytesTotal;
+    currentStats.nCurrentBytes=bytesReceived;
 }

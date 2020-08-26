@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>DialogGetFileFromServerProcess</class>
- <widget class="QDialog" name="DialogGetFileFromServerProcess">
+ <class>DialogConvertProcess</class>
+ <widget class="QDialog" name="DialogConvertProcess">
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>452</width>
-    <height>135</height>
+    <width>457</width>
+    <height>118</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Download file</string>
+   <string>Convert</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <widget class="QLabel" name="labelInfoModule">
+    <widget class="QLabel" name="labelInfo">
      <property name="text">
       <string/>
      </property>
@@ -25,20 +25,7 @@
     </widget>
    </item>
    <item>
-    <widget class="QProgressBar" name="progressBarModule">
-     <property name="maximum">
-      <number>0</number>
-     </property>
-     <property name="value">
-      <number>0</number>
-     </property>
-     <property name="alignment">
-      <set>Qt::AlignCenter</set>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QProgressBar" name="progressBarBytes">
+    <widget class="QProgressBar" name="progressBar">
      <property name="maximum">
       <number>0</number>
      </property>
@@ -58,7 +45,7 @@
      <property name="sizeHint" stdset="0">
       <size>
        <width>20</width>
-       <height>6</height>
+       <height>20</height>
       </size>
      </property>
     </spacer>

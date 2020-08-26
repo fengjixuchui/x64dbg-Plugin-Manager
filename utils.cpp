@@ -25,26 +25,6 @@ Utils::Utils(QObject *pParent) : QObject(pParent)
 
 }
 
-void Utils::loadOptions(XPLUGINMANAGER::OPTIONS *pOptions)
-{
-    QSettings settings(QCoreApplication::applicationDirPath()+QDir::separator()+"x64plgmnr.ini",QSettings::IniFormat);
-
-    pOptions->bStayOnTop=settings.value("StayOnTop",false).toBool();
-    pOptions->sRootPath=settings.value("RootPath","").toString(); // TODO
-    pOptions->sDataPath=settings.value("DataPath","$app/data").toString();
-    pOptions->sJSONLink=settings.value("JSONFile",X_JSON_DEFAULT).toString();
-}
-
-void Utils::saveOptions(XPLUGINMANAGER::OPTIONS *pOptions)
-{
-    QSettings settings(QCoreApplication::applicationDirPath()+QDir::separator()+"x64plgmnr.ini",QSettings::IniFormat);
-
-    settings.setValue("StayOnTop",pOptions->bStayOnTop);
-    settings.setValue("RootPath",pOptions->sRootPath);
-    settings.setValue("DataPath",pOptions->sDataPath);
-    settings.setValue("JSONFile",pOptions->sJSONLink);
-}
-
 QList<Utils::RECORD> Utils::getRecords(QString sRootPath)
 {
     QList<Utils::RECORD> listResult;
@@ -154,7 +134,7 @@ QByteArray Utils::createPluginInfo(Utils::MDATA *pMData, QList<Utils::FILE_RECOR
             QJsonObject record;
 
             record.insert("Path",       pListDirectoryRecords->at(i).sPath);
-            record.insert("Action",     "make_directory");
+            record.insert("Action",     actionIdToString(ACTION_MAKEDIRECTORY));
 
             installArray.append(record);
         }
@@ -164,7 +144,7 @@ QByteArray Utils::createPluginInfo(Utils::MDATA *pMData, QList<Utils::FILE_RECOR
             QJsonObject record;
 
             record.insert("Path",       pListFileRecords->at(i).sPath);
-            record.insert("Action",     "copy_file");
+            record.insert("Action",     actionIdToString(ACTION_COPYFILE));
             record.insert("SHA1",       pListFileRecords->at(i).sSHA1);
 
             installArray.append(record);
@@ -179,7 +159,7 @@ QByteArray Utils::createPluginInfo(Utils::MDATA *pMData, QList<Utils::FILE_RECOR
             QJsonObject record;
 
             record.insert("Path",       pListFileRecords->at(i).sPath);
-            record.insert("Action",     "remove_file");
+            record.insert("Action",     actionIdToString(ACTION_REMOVEFILE));
 
             removeArray.append(record);
         }
@@ -189,7 +169,7 @@ QByteArray Utils::createPluginInfo(Utils::MDATA *pMData, QList<Utils::FILE_RECOR
             QJsonObject record;
 
             record.insert("Path",       pListDirectoryRecords->at(i).sPath);
-            record.insert("Action",     "remove_directory_if_empty");
+            record.insert("Action",     actionIdToString(ACTION_REMOVEDIRECTORYIFEMPTY));
 
             removeArray.append(record);
         }
@@ -237,13 +217,13 @@ Utils::MDATA Utils::getMDataFromZip(QIODevice *pDevice, QString sRootPath)
 
         QByteArray baData=xzip.decompress(&pluginInfoRecord);
 
-        result=getMDataFromData(baData,sRootPath);
+        result=getMDataFromData(baData);
     }
 
     return result;
 }
 
-Utils::MDATA Utils::getMDataFromData(QByteArray baData, QString sRootPath)
+Utils::MDATA Utils::getMDataFromData(QByteArray baData)
 {
     Utils::MDATA result={};
 
@@ -253,64 +233,16 @@ Utils::MDATA Utils::getMDataFromData(QByteArray baData, QString sRootPath)
 
     objectToMData(&rootObj,&result);
 
-    QJsonArray installArray=rootObj.value("Install").toArray();
-    QJsonArray removeArray=rootObj.value("Remove").toArray();
-
-    int nInstallCount=installArray.count();
-
-    for(int i=0;i<nInstallCount;i++)
-    {
-        QJsonObject recordObj=installArray.at(i).toObject();
-        INSTALL_RECORD record={};
-
-        record.sPath        =recordObj.value("Path").toString();
-        record.sFullPath    =sRootPath+QDir::separator()+record.sPath;
-        record.sSHA1        =recordObj.value("SHA1").toString();
-
-        QString sAction=recordObj.value("Action").toString();
-
-        if(sAction=="copy_file")
-        {
-            record.bIsFile=true;
-        }
-
-        result.listInstallRecords.append(record);
-    }
-
-    int nRemoveCount=removeArray.count();
-
-    for(int i=0;i<nRemoveCount;i++)
-    {
-        QJsonObject recordObj=removeArray.at(i).toObject();
-        REMOVE_RECORD record={};
-
-        record.sPath        =recordObj.value("Path").toString();
-        record.sFullPath    =sRootPath+QDir::separator()+record.sPath;
-
-        QString sAction=recordObj.value("Action").toString();
-
-        if(sAction=="remove_file")
-        {
-            record.action=RRA_REMOVEFILE;
-        }
-        else if(sAction=="remove_directory_if_empty")
-        {
-            record.action=RRA_REMOVEDIRECTORYIFEMPTY;
-        }
-
-        result.listRemoveRecords.append(record);
-    }
-
     return result;
 }
 
-Utils::MDATA Utils::getMDataFromJSONFile(QString sFileName, QString sRootPath)
+Utils::MDATA Utils::getMDataFromJSONFile(QString sFileName)
 {
     Utils::MDATA result={};
 
     QByteArray baData=XBinary::readFile(sFileName);
 
-    result=getMDataFromData(baData,sRootPath);
+    result=getMDataFromData(baData);
 
     return result;
 }
@@ -318,6 +250,9 @@ Utils::MDATA Utils::getMDataFromJSONFile(QString sFileName, QString sRootPath)
 QList<Utils::MDATA> Utils::getInstalledModules(QString sDataPath, QString sRootPath)
 {
     QList<Utils::MDATA> listResult;
+
+    sDataPath=XBinary::convertPathName(sDataPath);
+    sRootPath=XBinary::convertPathName(sRootPath);
 
     QDir dir(sDataPath+QDir::separator()+"installed");
 
@@ -336,7 +271,7 @@ QList<Utils::MDATA> Utils::getInstalledModules(QString sDataPath, QString sRootP
         {
             QByteArray baData=file.readAll();
 
-            Utils::MDATA record=getMDataFromData(baData,sRootPath);
+            Utils::MDATA record=getMDataFromData(baData);
             record.sBundleFileName=sBundleName;
 
             listResult.append(record);
@@ -378,6 +313,21 @@ QList<Utils::MDATA> Utils::getModulesFromJSONFile(QString sFileName)
     return listResult;
 }
 
+QDate Utils::getDateFromJSONFile(QString sFileName)
+{
+    QDate dtResult;
+
+    QByteArray baData=XBinary::readFile(sFileName);
+
+    QJsonDocument jsDoc=QJsonDocument::fromJson(baData);
+
+    QJsonObject rootObj=jsDoc.object();
+
+    dtResult=QDate::fromString(rootObj.value("Date").toString(),"yyyy-MM-dd");
+
+    return dtResult;
+}
+
 bool Utils::createServerList(QString sListFileName, QList<QString> *pList, QString sWebPrefix, QString sDate)
 {
     bool bResult=false;
@@ -388,7 +338,7 @@ bool Utils::createServerList(QString sListFileName, QList<QString> *pList, QStri
 
     for(int i=0;i<nCount;i++)
     {
-        MDATA mdata=getMDataFromJSONFile(pList->at(i),"");
+        MDATA mdata=getMDataFromJSONFile(pList->at(i));
         mdata.sSrc=sWebPrefix+"/"+mdata.sSrc;
 
         QJsonObject record;
@@ -428,7 +378,85 @@ void Utils::mDataToObject(Utils::MDATA *pMData, QJsonObject *pObject)
 
     if(pMData->sSHA1!="")
     {
-        pObject->insert("SHA1",             QJsonValue::fromVariant(pMData->sSHA1));
+        pObject->insert("SHA1",         QJsonValue::fromVariant(pMData->sSHA1));
+    }
+
+    if(pMData->sGithub!="")
+    {
+        pObject->insert("Github",       QJsonValue::fromVariant(pMData->sGithub));
+    }
+
+    // TODO optimize
+    int nInstallCount=pMData->listInstallRecords.count();
+    int nRemoveCount=pMData->listRemoveRecords.count();
+    int nConvertCount=pMData->listConvertRecords.count();
+    int nDownloadCount=pMData->listDownloads.count();
+
+    if(nInstallCount)
+    {
+        QJsonArray jsArray;
+
+        for(int i=0;i<nInstallCount;i++)
+        {
+            HANDLE_RECORD record=pMData->listInstallRecords.at(i);
+            QJsonObject recordObj;
+
+            handleRecordToObject(&record,&recordObj);
+
+            jsArray.append(recordObj);
+        }
+
+        pObject->insert("Install",jsArray);
+    }
+
+    if(nRemoveCount)
+    {
+        QJsonArray jsArray;
+
+        for(int i=0;i<nRemoveCount;i++)
+        {
+            HANDLE_RECORD record=pMData->listRemoveRecords.at(i);
+            QJsonObject recordObj;
+
+            handleRecordToObject(&record,&recordObj);
+
+            jsArray.append(recordObj);
+        }
+
+        pObject->insert("Remove",jsArray);
+    }
+
+    if(nConvertCount)
+    {
+        QJsonArray jsArray;
+
+        for(int i=0;i<nConvertCount;i++)
+        {
+            HANDLE_RECORD record=pMData->listConvertRecords.at(i);
+            QJsonObject recordObj;
+
+            handleRecordToObject(&record,&recordObj);
+
+            jsArray.append(recordObj);
+        }
+
+        pObject->insert("Convert",jsArray);
+    }
+
+    if(nDownloadCount)
+    {
+        QJsonArray jsArray;
+
+        for(int i=0;i<nDownloadCount;i++)
+        {
+            QJsonObject recordObj;
+
+            recordObj.insert("Src",QJsonValue::fromVariant(pMData->listDownloads.at(i)));
+
+            jsArray.append(recordObj);
+        }
+
+        pObject->insert("Download",jsArray);
     }
 }
 
@@ -446,9 +474,93 @@ void Utils::objectToMData(QJsonObject *pObject, Utils::MDATA *pMData)
     pMData->bIs64           =pObject->value("Is64").toBool();
     pMData->sSrc            =pObject->value("Src").toString();
     pMData->sSHA1           =pObject->value("SHA1").toString();
+    pMData->sGithub         =pObject->value("Github").toString();
+
+    // TODO optimize
+    QJsonArray installArray=pObject->value("Install").toArray();
+    QJsonArray removeArray=pObject->value("Remove").toArray();
+    QJsonArray convertArray=pObject->value("Convert").toArray();
+    QJsonArray downloadArray=pObject->value("Download").toArray();
+
+    int nInstallCount=installArray.count();
+
+    for(int i=0;i<nInstallCount;i++)
+    {
+        QJsonObject recordObj=installArray.at(i).toObject();
+        HANDLE_RECORD record={};
+
+        objectToHandleRecord(&recordObj,&record);
+
+        pMData->listInstallRecords.append(record);
+    }
+
+    int nRemoveCount=removeArray.count();
+
+    for(int i=0;i<nRemoveCount;i++)
+    {
+        QJsonObject recordObj=removeArray.at(i).toObject();
+        HANDLE_RECORD record={};
+
+        objectToHandleRecord(&recordObj,&record);
+
+        pMData->listRemoveRecords.append(record);
+    }
+
+    int nConvertCount=convertArray.count();
+
+    for(int i=0;i<nConvertCount;i++)
+    {
+        QJsonObject recordObj=convertArray.at(i).toObject();
+        HANDLE_RECORD record={};
+
+        objectToHandleRecord(&recordObj,&record);
+
+        pMData->listConvertRecords.append(record);
+    }
+
+    int nDownloadCount=downloadArray.count();
+
+    for(int i=0;i<nDownloadCount;i++)
+    {
+        QJsonObject recordObj=downloadArray.at(i).toObject();
+
+        QString sRecord=recordObj.value("Src").toString();
+
+        pMData->listDownloads.append(sRecord);
+    }
 }
 
-QMap<QString, Utils::STATUS> Utils::getModulesStatusMap(XPLUGINMANAGER::OPTIONS *pOptions,QList<Utils::MDATA> *pServerList, QList<Utils::MDATA> *pInstalled)
+void Utils::handleRecordToObject(Utils::HANDLE_RECORD *pHandleRecord, QJsonObject *pObject)
+{
+    pObject->insert("Path",             QJsonValue::fromVariant(pHandleRecord->sPath));
+    pObject->insert("Action",           QJsonValue::fromVariant(actionIdToString(pHandleRecord->action)));
+
+    if(pHandleRecord->sSHA1!="")
+    {
+        pObject->insert("SHA1",         QJsonValue::fromVariant(pHandleRecord->sSHA1));
+    }
+
+    if(pHandleRecord->sSrc!="")
+    {
+        pObject->insert("Src",          QJsonValue::fromVariant(pHandleRecord->sSrc));
+    }
+
+    if(pHandleRecord->sPattern!="")
+    {
+        pObject->insert("Pattern",      QJsonValue::fromVariant(pHandleRecord->sPattern));
+    }
+}
+
+void Utils::objectToHandleRecord(QJsonObject *pObject, Utils::HANDLE_RECORD *pHandleRecord)
+{
+    pHandleRecord->sSrc         =pObject->value("Src").toString();
+    pHandleRecord->sPath        =pObject->value("Path").toString();
+    pHandleRecord->sSHA1        =pObject->value("SHA1").toString();
+    pHandleRecord->sPattern     =pObject->value("Pattern").toString();
+    pHandleRecord->action       =stringToActionId(pObject->value("Action").toString());
+}
+
+QMap<QString, Utils::STATUS> Utils::getModulesStatusMap(QString sDataPath, QList<Utils::MDATA> *pServerList, QList<Utils::MDATA> *pInstalled)
 {
     QMap<QString, Utils::STATUS> mapResult;
 
@@ -457,11 +569,16 @@ QMap<QString, Utils::STATUS> Utils::getModulesStatusMap(XPLUGINMANAGER::OPTIONS 
     for(int i=0;i<nCount;i++)
     {
         STATUS status={};
-        status.bInstall=true;
+
+        if(pServerList->at(i).sDate!="")
+        {
+            status.bInstall=true;
+        }
+
         status.sServerListDate=pServerList->at(i).sDate;
         status.sServerListVersion=pServerList->at(i).sVersion;
         status.webRecord.sName=pServerList->at(i).sName;
-        status.webRecord.sFileName=getModuleFileName(pOptions,pServerList->at(i).sName);
+        status.webRecord.sFileName=getModuleFileName(sDataPath,pServerList->at(i).sName);
         status.webRecord.sLink=pServerList->at(i).sSrc;
 
         mapResult.insert(pServerList->at(i).sName,status);
@@ -488,7 +605,7 @@ QMap<QString, Utils::STATUS> Utils::getModulesStatusMap(XPLUGINMANAGER::OPTIONS 
 
         if(bIsServerList)
         {
-            if((status.sServerListDate>status.sInstalledDate)&&(status.sServerListVersion!=status.sInstalledVersion))
+            if((status.sServerListDate>status.sInstalledDate)&&(status.sServerListVersion!=status.sInstalledVersion)&&(status.sServerListDate!=""))
             {
                 status.bUpdate=true;
             }
@@ -500,13 +617,13 @@ QMap<QString, Utils::STATUS> Utils::getModulesStatusMap(XPLUGINMANAGER::OPTIONS 
     return mapResult;
 }
 
-Utils::MODULES_DATA Utils::getModulesData(XPLUGINMANAGER::OPTIONS *pOptions)
+Utils::MODULES_DATA Utils::getModulesData(QString sDataPath)
 {
     MODULES_DATA result={};
 
-    result.listServerList=Utils::getModulesFromJSONFile(Utils::getServerListFileName(pOptions));
-    result.listInstalled=Utils::getInstalledModules(XBinary::convertPathName(pOptions->sDataPath),XBinary::convertPathName(pOptions->sRootPath));
-    result.mapStatus=getModulesStatusMap(pOptions,&result.listServerList,&result.listInstalled);
+    result.listServerList=Utils::getModulesFromJSONFile(Utils::getServerListFileName(sDataPath));
+    result.listInstalled=Utils::getInstalledModules(sDataPath,sDataPath);
+    result.mapStatus=getModulesStatusMap(sDataPath,&result.listServerList,&result.listInstalled);
     result.listUpdates=getUpdates(&result.mapStatus);
 
     return result;
@@ -533,19 +650,59 @@ QList<Utils::WEB_RECORD> Utils::getUpdates(QMap<QString,STATUS> *pMapStatus)
     return listResult;
 }
 
-QString Utils::getInstalledJsonFileName(XPLUGINMANAGER::OPTIONS *pOptions, QString sName)
+QString Utils::getInstalledJsonFileName(QString sDataPath, QString sName)
 {
-    return XBinary::convertPathName(pOptions->sDataPath)+QDir::separator()+"installed"+QDir::separator()+QString("%1.json").arg(sName);
+    return XBinary::convertPathName(sDataPath)+QDir::separator()+"installed"+QDir::separator()+QString("%1.json").arg(sName);
 }
 
-QString Utils::getServerListFileName(XPLUGINMANAGER::OPTIONS *pOptions)
+QString Utils::getServerListFileName(QString sDataPath)
 {
-    return XBinary::convertPathName(pOptions->sDataPath)+QDir::separator()+"list.json";
+    return XBinary::convertPathName(sDataPath)+QDir::separator()+"list.json";
 }
 
-QString Utils::getModuleFileName(XPLUGINMANAGER::OPTIONS *pOptions, QString sName)
+QString Utils::getServerLastestListFileName(QString sDataPath)
 {
-    return XBinary::convertPathName(pOptions->sDataPath)+QDir::separator()+"modules"+QDir::separator()+QString("%1.x64dbg.zip").arg(sName);
+    return XBinary::convertPathName(sDataPath)+QDir::separator()+"list.lastest.json";
+}
+
+QString Utils::getModuleFileName(QString sDataPath, QString sName)
+{
+    return XBinary::convertPathName(sDataPath)+QDir::separator()+"modules"+QDir::separator()+QString("%1.x64dbg.zip").arg(sName);
+}
+
+QString Utils::getConvertPath(QString sDataPath, QString sName)
+{
+    return XBinary::convertPathName(sDataPath)+QDir::separator()+"modules"+QDir::separator()+QString("%1").arg(sName);
+}
+
+QString Utils::getConvertDownloadFileName(QString sDataPath, QString sName, QString sPattern)
+{
+    QString sResult;
+
+    QString sConvertPath=getConvertPath(sDataPath,sName);
+
+    QDir dir(sConvertPath);
+    QList<QFileInfo> listFiles=dir.entryInfoList(QDir::Files);
+
+    int nCount=listFiles.count();
+
+    for(int i=0;i<nCount;i++)
+    {
+        QString sName=listFiles.at(i).fileName();
+        if(sName.contains(sPattern))
+        {
+            sResult=listFiles.at(i).absoluteFilePath();
+
+            break;
+        }
+    }
+
+    return sResult;
+}
+
+QString Utils::getConvertModulePath(QString sDataPath, QString sName)
+{
+    return XBinary::convertPathName(sDataPath)+QDir::separator()+"modules"+QDir::separator()+QString("%1").arg(sName)+QDir::separator()+"module";
 }
 
 Utils::MDATA Utils::getMDataByName(QList<MDATA> *pServerList,QString sName)
@@ -598,6 +755,156 @@ Utils::WEB_RECORD Utils::getWebRecordByName(QList<Utils::WEB_RECORD> *pListWebRe
     }
 
     return result;
+}
+
+bool Utils::isGithubPresent(QString sServerListFileName)
+{
+    bool bResult=false;
+
+    QList<MDATA> listMData=getModulesFromJSONFile(sServerListFileName);
+
+    int nCount=listMData.count();
+
+    for(int i=0;i<nCount;i++)
+    {
+        if(listMData.at(i).sGithub!="")
+        {
+            bResult=true;
+
+            break;
+        }
+    }
+
+    return bResult;
+}
+
+bool Utils::updateJsonFile(QString sFileName, QList<MDATA> listMData)
+{
+    bool bResult=false;
+
+    QByteArray baData=XBinary::readFile(sFileName);
+
+    QJsonDocument jsDoc=QJsonDocument::fromJson(baData);
+
+    QJsonObject rootObj=jsDoc.object();
+    QJsonObject _rootObj;
+
+    _rootObj.insert("Date",rootObj.value("Date"));
+
+    QJsonArray arrayModules=rootObj.value("Modules").toArray();
+    QJsonArray _arrayModules;
+
+    int nCount=arrayModules.count();
+    int _nCount=listMData.count();
+
+    for(int i=0;i<nCount;i++)
+    {
+        QJsonObject recordObject=arrayModules.at(i).toObject();
+
+        MDATA mdata={};
+
+        objectToMData(&recordObject,&mdata);
+
+        for(int j=0;j<_nCount;j++)
+        {
+            if((mdata.sName==listMData.at(j).sName)&&(listMData.at(j).sDate!=""))
+            {
+                mdata=listMData.at(j);
+                break;
+            }
+        }
+
+        QJsonObject _recordObject;
+
+        mDataToObject(&mdata,&_recordObject);
+
+        _arrayModules.append(_recordObject);
+    }
+
+    _rootObj.insert("Modules",_arrayModules);
+
+    QJsonDocument jsResult(_rootObj);
+
+    bResult=XBinary::writeToFile(sFileName,jsResult.toJson(QJsonDocument::Indented));
+
+    return bResult;
+}
+
+bool Utils::updateServerList(QString sOldFileName, QString sNewFileName)
+{
+    bool bResult=false;
+
+    if(!XBinary::isFileExists(sOldFileName))
+    {
+        bResult=XBinary::copyFile(sNewFileName,sOldFileName);
+    }
+    else
+    {
+        if(Utils::getDateFromJSONFile(sNewFileName).toJulianDay()>Utils::getDateFromJSONFile(sOldFileName).toJulianDay())
+        {
+            bResult=XBinary::copyFile(sNewFileName,sOldFileName);
+        }
+        else
+        {
+            QList<Utils::MDATA> listMData=Utils::getModulesFromJSONFile(sNewFileName);
+
+            bResult=updateJsonFile(sOldFileName,listMData);
+        }
+    }
+
+    return bResult;
+}
+
+QString Utils::actionIdToString(Utils::ACTION action)
+{
+    QString sResult="unknown";
+
+    switch(action)
+    {
+        case ACTION_UNKNOWN:                    sResult=QString("unknown");                     break;
+        case ACTION_COPYFILE:                   sResult=QString("copy_file");                   break;
+        case ACTION_REMOVEFILE:                 sResult=QString("remove_file");                 break;
+        case ACTION_REMOVEDIRECTORYIFEMPTY:     sResult=QString("remove_directory_if_empty");   break;
+        case ACTION_MAKEDIRECTORY:              sResult=QString("make_directory");              break;
+        case ACTION_UNPACKDIRECTORY:            sResult=QString("unpack_directory");            break;
+        case ACTION_UNPACKFILE:                 sResult=QString("unpack_file");                 break;
+    }
+
+    return sResult;
+}
+
+Utils::ACTION Utils::stringToActionId(QString sAction)
+{
+    Utils::ACTION result=ACTION_UNKNOWN;
+
+    if      (sAction=="unknown")                    result=ACTION_UNKNOWN;
+    else if (sAction=="copy_file")                  result=ACTION_COPYFILE;
+    else if (sAction=="remove_file")                result=ACTION_REMOVEFILE;
+    else if (sAction=="remove_directory_if_empty")  result=ACTION_REMOVEDIRECTORYIFEMPTY;
+    else if (sAction=="make_directory")             result=ACTION_MAKEDIRECTORY;
+    else if (sAction=="unpack_directory")           result=ACTION_UNPACKDIRECTORY;
+    else if (sAction=="unpack_file")                result=ACTION_UNPACKFILE;
+
+    return result;
+}
+
+bool Utils::checkPattern(QString sString, Utils::MDATA *pMData)
+{
+    bool bResult=false;
+
+    int nCount=pMData->listConvertRecords.count();
+
+    for(int i=0;i<nCount;i++)
+    {
+        if(sString.contains(pMData->listConvertRecords.at(i).sPattern))
+        {
+            bResult=true;
+
+            break;
+        }
+    }
+
+    return bResult;
 }
 
 void Utils::_getRecords(QString sRootPath, QString sCurrentPath, QList<Utils::RECORD> *pListRecords)

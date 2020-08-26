@@ -21,18 +21,18 @@
 #include "dialogoptions.h"
 #include "ui_dialogoptions.h"
 
-DialogOptions::DialogOptions(QWidget *parent, XPLUGINMANAGER::OPTIONS *pOptions) :
-    QDialog(parent),
+DialogOptions::DialogOptions(QWidget *pParent, XOptions *pOptions) :
+    QDialog(pParent),
     ui(new Ui::DialogOptions)
 {
     ui->setupUi(this);
 
     this->pOptions=pOptions;
 
-    ui->checkBoxStayOnTop->setChecked(pOptions->bStayOnTop);
-    ui->lineEditRootPath->setText(pOptions->sRootPath);
-    ui->lineEditDataPath->setText(pOptions->sDataPath);
-    ui->lineEditJSONLink->setText(pOptions->sJSONLink);
+    pOptions->setCheckBox(ui->checkBoxStayOnTop,XOptions::ID_STAYONTOP);
+    pOptions->setLineEdit(ui->lineEditRootPath,XOptions::ID_ROOTPATH);
+    pOptions->setLineEdit(ui->lineEditDataPath,XOptions::ID_DATAPATH);
+    pOptions->setLineEdit(ui->lineEditJSONLink,XOptions::ID_JSON);
 }
 
 DialogOptions::~DialogOptions()
@@ -42,10 +42,10 @@ DialogOptions::~DialogOptions()
 
 void DialogOptions::on_pushButtonOK_clicked()
 {
-    pOptions->bStayOnTop=ui->checkBoxStayOnTop->isChecked();
-    pOptions->sRootPath=ui->lineEditRootPath->text();
-    pOptions->sDataPath=ui->lineEditDataPath->text();
-    pOptions->sJSONLink=ui->lineEditJSONLink->text();
+    pOptions->getCheckBox(ui->checkBoxStayOnTop,XOptions::ID_STAYONTOP);
+    pOptions->getLineEdit(ui->lineEditRootPath,XOptions::ID_ROOTPATH);
+    pOptions->getLineEdit(ui->lineEditDataPath,XOptions::ID_DATAPATH);
+    pOptions->getLineEdit(ui->lineEditJSONLink,XOptions::ID_JSON);
 
     this->close();
 }

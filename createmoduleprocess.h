@@ -31,8 +31,8 @@ class CreateModuleProcess : public QObject
     Q_OBJECT
 
 public:
-    explicit CreateModuleProcess(QObject *parent=nullptr);
-    void setData(Utils::MDATA *pMData);
+    explicit CreateModuleProcess(QObject *pParent=nullptr);
+    void setData(Utils::MDATA *pMData,bool bCreateInfoFile);
     void stop();
     Utils::STATS getCurrentStats();
 
@@ -48,6 +48,7 @@ private:
     Utils::MDATA *pMData;
     bool bIsStop;
     Utils::STATS currentStats;
+    bool bCreateInfoFile;
 };
 
 #endif // CREATEMODULEPROCESS_H

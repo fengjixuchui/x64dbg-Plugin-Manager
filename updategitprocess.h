@@ -18,43 +18,37 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 //
-#ifndef DIALOGCREATEMODULEPROCESS_H
-#define DIALOGCREATEMODULEPROCESS_H
+#ifndef UPDATEGITPROCESS_H
+#define UPDATEGITPROCESS_H
 
-#include <QDialog>
+#include <QObject>
+#include <QElapsedTimer>
 #include <QThread>
-#include <QTimer>
-#include "../createmoduleprocess.h"
-#include "../utils.h"
+#include "utils.h"
+#include "xgithub.h"
 
-namespace Ui {
-class DialogCreateModuleProcess;
-}
-
-class DialogCreateModuleProcess : public QDialog
+class UpdateGitProcess : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit DialogCreateModuleProcess(QWidget *pParent, Utils::MDATA *pMData,bool bCreateInfoFile);
-    ~DialogCreateModuleProcess();
-
-private slots:
-    void on_pushButtonCancel_clicked();
-    void onCompleted(qint64 nElapsed);
-    void timerSlot();
+    explicit UpdateGitProcess(QObject *pParent=nullptr);
+    void setData(QString sServerListFileName);
+    void stop();
+    Utils::STATS getCurrentStats();
 
 signals:
     void errorMessage(QString sMessage);
+    void infoMessage(QString sMessage);
+    void completed(qint64 nElapsedTime);
+
+public slots:
+    void process();
 
 private:
-    Ui::DialogCreateModuleProcess *ui;
-    Utils::MDATA *pMData;
-
-    CreateModuleProcess *pCreateModuleProcess;
-    QThread *pThread;
-    bool bIsRun;
-    QTimer *pTimer;
+    QString sServerListFileName;
+    bool bIsStop;
+    Utils::STATS currentStats;
 };
 
-#endif // DIALOGCREATEMODULEPROCESS_H
+#endif // UPDATEGITPROCESS_H

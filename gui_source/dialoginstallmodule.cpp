@@ -21,13 +21,15 @@
 #include "dialoginstallmodule.h"
 #include "ui_dialoginstallmodule.h"
 
-DialogInstallModule::DialogInstallModule(QWidget *parent, XPLUGINMANAGER::OPTIONS *pOptions) :
-    QDialog(parent),
+DialogInstallModule::DialogInstallModule(QWidget *pParent, QString sDataPath, QString sRootPath) :
+    QDialog(pParent),
     ui(new Ui::DialogInstallModule)
 {
     ui->setupUi(this);
 
-    this->pOptions=pOptions;
+    this->pParent=pParent;
+    this->sDataPath=sDataPath;
+    this->sRootPath=sRootPath;
 }
 
 DialogInstallModule::~DialogInstallModule()
@@ -39,7 +41,7 @@ void DialogInstallModule::setFileName(QString sModuleFileName)
 {
     this->sModuleFileName=sModuleFileName;
 
-    _mdata=Utils::getMDataFromZip(sModuleFileName,XBinary::convertPathName(pOptions->sRootPath));
+    _mdata=Utils::getMDataFromZip(sModuleFileName,XBinary::convertPathName(sRootPath));
 
     ui->widgetInfo->setData(&_mdata);
 
@@ -55,32 +57,112 @@ void DialogInstallModule::setFileName(QString sModuleFileName)
     }
 }
 
-void DialogInstallModule::setMData(Utils::MDATA *pMData)
+bool DialogInstallModule::setMData(Utils::MDATA *pMData)
 {
-    QString sFileName=Utils::getModuleFileName(pOptions,pMData->sName);
+    bool bResult=false;
 
-    if(!XBinary::isFileHashValid(XBinary::HASH_SHA1,sFileName,pMData->sSHA1))
+    QString sSHA1=pMData->sSHA1;
+
+    QString sModuleFileName=Utils::getModuleFileName(sDataPath,pMData->sName);
+
+    bool bHash=XBinary::isFileHashValid(XBinary::HASH_SHA1,sModuleFileName,sSHA1);
+
+    if(!bHash)
     {
-        Utils::WEB_RECORD record={};
+        if(pMData->sGithub!="")
+        {
+            QString sConvertPath=Utils::getConvertPath(sDataPath,pMData->sName);
+            QString sDownloadModulePath=Utils::getConvertModulePath(sDataPath,pMData->sName);
 
-        record.sFileName=sFileName;
-        record.sLink=pMData->sSrc;
+            XBinary::createDirectory(sConvertPath);
+            XBinary::createDirectory(sDownloadModulePath);
 
-        DialogGetFileFromServerProcess dialogGetFileFromServer(this,QList<Utils::WEB_RECORD>()<<record);
+            QList<Utils::WEB_RECORD> listWebRecords;
 
-        connect(&dialogGetFileFromServer,SIGNAL(errorMessage(QString)),this,SIGNAL(errorMessage(QString)));
+            int nCount=pMData->listDownloads.count();
 
-        dialogGetFileFromServer.exec();
+            for(int i=0;i<nCount;i++)
+            {
+                Utils::WEB_RECORD record={};
+
+                QString sLink=pMData->listDownloads.at(i);
+
+                record.sFileName=sConvertPath+QDir::separator()+sLink.section("/",-1,-1);
+                record.sFileName=record.sFileName.remove("?raw=true");
+                record.sLink=sLink;
+
+                listWebRecords.append(record);
+            }
+
+            DialogGetFileFromServerProcess dialogGetFileFromServer(pParent,listWebRecords);
+
+            connect(&dialogGetFileFromServer,SIGNAL(errorMessage(QString)),this,SIGNAL(errorMessage(QString)));
+
+            dialogGetFileFromServer.exec();
+
+            DialogConvertProcess dialogConvertProcess(pParent,pMData,sDataPath);
+
+            connect(&dialogConvertProcess,SIGNAL(errorMessage(QString)),this,SIGNAL(errorMessage(QString)));
+
+            dialogConvertProcess.exec();
+
+            Utils::MDATA mdata=*pMData;
+
+            mdata.sBundleFileName=Utils::getModuleFileName(sDataPath,mdata.sName);
+            mdata.sRoot=sDownloadModulePath;
+
+            QString sErrorString;
+
+            if(Utils::checkMData(&mdata,&sErrorString))
+            {
+                DialogCreateModuleProcess dcmp(pParent,&mdata,false);
+
+                connect(&dcmp,SIGNAL(errorMessage(QString)),this,SIGNAL(errorMessage(QString)));
+
+                dcmp.exec();
+            }
+            else
+            {
+                emit errorMessage(sErrorString);
+            }
+
+        #ifndef QT_DEBUG
+            XBinary::removeDirectory(sConvertPath);
+        #endif
+
+            Utils::updateJsonFile(Utils::getServerListFileName(sDataPath),QList<Utils::MDATA>() << mdata);
+
+            sSHA1=mdata.sSHA1;
+        }
+        else
+        {
+            Utils::WEB_RECORD record={};
+
+            record.sFileName=sModuleFileName;
+            record.sLink=pMData->sSrc;
+
+            DialogGetFileFromServerProcess dialogGetFileFromServer(pParent,QList<Utils::WEB_RECORD>()<<record);
+
+            connect(&dialogGetFileFromServer,SIGNAL(errorMessage(QString)),this,SIGNAL(errorMessage(QString)));
+
+            dialogGetFileFromServer.exec();
+        }
+
+        bHash=XBinary::isFileHashValid(XBinary::HASH_SHA1,sModuleFileName,sSHA1);
     }
 
-    if(XBinary::isFileHashValid(XBinary::HASH_SHA1,sFileName,pMData->sSHA1))
+    if(bHash)
     {
-        setFileName(sFileName);
+        setFileName(sModuleFileName);
+
+        bResult=true;
     }
     else
     {
-        emit errorMessage(QString("%1: %2").arg(tr("Invalid SHA1")).arg(sFileName));
+        emit errorMessage(QString("%1: %2").arg(tr("Invalid SHA1")).arg(sModuleFileName));
     }
+
+    return bResult;
 }
 
 void DialogInstallModule::on_pushButtonCancel_clicked()
@@ -90,7 +172,7 @@ void DialogInstallModule::on_pushButtonCancel_clicked()
 
 void DialogInstallModule::on_pushButtonOK_clicked()
 {
-    DialogInstallModuleProcess dimp(this,pOptions,QList<QString>()<<sModuleFileName);
+    DialogInstallModuleProcess dimp(this,sDataPath,sRootPath,QList<QString>()<<sModuleFileName);
 
     connect(&dimp,SIGNAL(errorMessage(QString)),this,SIGNAL(errorMessage(QString)));
 

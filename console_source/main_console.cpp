@@ -22,12 +22,15 @@
 #include <QCommandLineParser>
 #include <QCommandLineOption>
 #include "consoleoutput.h"
+#include "xoptions.h"
 #include "../global.h"
 #include "../utils.h"
 #include "../createmoduleprocess.h"
 #include "../getfilefromserverprocess.h"
 #include "../installmoduleprocess.h"
 #include "../removemoduleprocess.h"
+#include "../updategitprocess.h"
+#include "../convertprocess.h"
 
 enum PLGMNGREXITCODE
 {
@@ -53,7 +56,7 @@ enum PLGMNGREXITCODE
     PLGMNGREXITCODE_NOUPDATESAVAILABLE,
 };
 
-void installFiles(XPLUGINMANAGER::OPTIONS *pOptions,ConsoleOutput *pConsoleOutput,QList<QString> *pListFileNames)
+void installFiles(QString sDataPath, QString sRootPath,ConsoleOutput *pConsoleOutput,QList<QString> *pListFileNames)
 {
     int nCount=pListFileNames->count();
 
@@ -65,8 +68,7 @@ void installFiles(XPLUGINMANAGER::OPTIONS *pOptions,ConsoleOutput *pConsoleOutpu
             InstallModuleProcess installModuleProcess;
             QObject::connect(&installModuleProcess,SIGNAL(infoMessage(QString)),pConsoleOutput,SLOT(infoMessage(QString)));
             QObject::connect(&installModuleProcess,SIGNAL(errorMessage(QString)),pConsoleOutput,SLOT(errorMessage(QString)));
-            installModuleProcess.setData(pOptions,QList<QString>()<<sFileName);
-
+            installModuleProcess.setData(sDataPath,sRootPath,QList<QString>()<<sFileName);
             installModuleProcess.process();
         }
         else
@@ -76,7 +78,7 @@ void installFiles(XPLUGINMANAGER::OPTIONS *pOptions,ConsoleOutput *pConsoleOutpu
     }
 }
 
-void installModules(XPLUGINMANAGER::OPTIONS *pOptions,Utils::MODULES_DATA *pModulesData,ConsoleOutput *pConsoleOutput,QList<QString> *pListModuleNames)
+void installModules(QString sDataPath, QString sRootPath,Utils::MODULES_DATA *pModulesData,ConsoleOutput *pConsoleOutput,QList<QString> *pListModuleNames)
 {
     int nCount=pListModuleNames->count();
 
@@ -85,36 +87,108 @@ void installModules(XPLUGINMANAGER::OPTIONS *pOptions,Utils::MODULES_DATA *pModu
         Utils::MDATA mdata=Utils::getMDataByName(&(pModulesData->listServerList),pListModuleNames->at(i));
 
         if(mdata.sName!="")
-        {
-            QString sFileName=Utils::getModuleFileName(pOptions,mdata.sName);
+        {        
+            QString sSHA1=mdata.sSHA1;
 
-            if(!XBinary::isFileHashValid(XBinary::HASH_SHA1,sFileName,mdata.sSHA1))
+            QString sModuleFileName=Utils::getModuleFileName(sDataPath,mdata.sName);
+
+            bool bHash=XBinary::isFileHashValid(XBinary::HASH_SHA1,sModuleFileName,sSHA1);
+
+            if(!bHash)
             {
-                Utils::WEB_RECORD record={};
+                if(mdata.sGithub!="")
+                {
+                    QString sConvertPath=Utils::getConvertPath(sDataPath,mdata.sName);
+                    QString sDownloadModulePath=Utils::getConvertModulePath(sDataPath,mdata.sName);
 
-                record.sFileName=sFileName;
-                record.sLink=mdata.sSrc;
+                    XBinary::createDirectory(sConvertPath);
+                    XBinary::createDirectory(sDownloadModulePath);
 
-                GetFileFromServerProcess getFileFromServerProcess;
-                QObject::connect(&getFileFromServerProcess,SIGNAL(infoMessage(QString)),pConsoleOutput,SLOT(infoMessage(QString)));
-                QObject::connect(&getFileFromServerProcess,SIGNAL(errorMessage(QString)),pConsoleOutput,SLOT(errorMessage(QString)));
-                getFileFromServerProcess.setData(QList<Utils::WEB_RECORD>()<<record);
+                    QList<Utils::WEB_RECORD> listWebRecords;
 
-                getFileFromServerProcess.process();
+                    int nCount=mdata.listDownloads.count();
+
+                    for(int i=0;i<nCount;i++)
+                    {
+                        Utils::WEB_RECORD record={};
+
+                        QString sLink=mdata.listDownloads.at(i);
+
+                        record.sFileName=sConvertPath+QDir::separator()+sLink.section("/",-1,-1);
+                        record.sFileName=record.sFileName.remove("?raw=true");
+                        record.sLink=sLink;
+
+                        listWebRecords.append(record);
+                    }
+
+                    GetFileFromServerProcess getFileFromServerProcess;
+                    QObject::connect(&getFileFromServerProcess,SIGNAL(infoMessage(QString)),pConsoleOutput,SLOT(infoMessage(QString)));
+                    QObject::connect(&getFileFromServerProcess,SIGNAL(errorMessage(QString)),pConsoleOutput,SLOT(errorMessage(QString)));
+                    getFileFromServerProcess.setData(listWebRecords);
+                    getFileFromServerProcess.process();
+
+                    ConvertProcess convertProcess;
+                    QObject::connect(&convertProcess,SIGNAL(infoMessage(QString)),pConsoleOutput,SLOT(infoMessage(QString)));
+                    QObject::connect(&convertProcess,SIGNAL(errorMessage(QString)),pConsoleOutput,SLOT(errorMessage(QString)));
+                    convertProcess.setData(&mdata,sDataPath);
+                    convertProcess.process();
+
+                    Utils::MDATA _mdata=mdata;
+
+                    _mdata.sBundleFileName=Utils::getModuleFileName(sDataPath,_mdata.sName);
+                    _mdata.sRoot=sDownloadModulePath;
+
+                    QString sErrorString;
+
+                    if(Utils::checkMData(&_mdata,&sErrorString))
+                    {
+                        CreateModuleProcess createModuleProcess;
+                        QObject::connect(&createModuleProcess,SIGNAL(infoMessage(QString)),pConsoleOutput,SLOT(infoMessage(QString)));
+                        QObject::connect(&createModuleProcess,SIGNAL(errorMessage(QString)),pConsoleOutput,SLOT(errorMessage(QString)));
+                        createModuleProcess.setData(&_mdata,false);
+                        createModuleProcess.process();
+                    }
+                    else
+                    {
+                        pConsoleOutput->errorMessage(sErrorString);
+                    }
+
+                #ifndef QT_DEBUG
+                    XBinary::removeDirectory(sConvertPath);
+                #endif
+
+                    Utils::updateJsonFile(Utils::getServerListFileName(sDataPath),QList<Utils::MDATA>() << _mdata);
+
+                    sSHA1=_mdata.sSHA1;
+                }
+                else
+                {
+                    Utils::WEB_RECORD record={};
+
+                    record.sFileName=sModuleFileName;
+                    record.sLink=mdata.sSrc;
+
+                    GetFileFromServerProcess getFileFromServerProcess;
+                    QObject::connect(&getFileFromServerProcess,SIGNAL(infoMessage(QString)),pConsoleOutput,SLOT(infoMessage(QString)));
+                    QObject::connect(&getFileFromServerProcess,SIGNAL(errorMessage(QString)),pConsoleOutput,SLOT(errorMessage(QString)));
+                    getFileFromServerProcess.setData(QList<Utils::WEB_RECORD>()<<record);
+                    getFileFromServerProcess.process();
+                }
+
+                bHash=XBinary::isFileHashValid(XBinary::HASH_SHA1,sModuleFileName,sSHA1);
             }
 
-            if(XBinary::isFileHashValid(XBinary::HASH_SHA1,sFileName,mdata.sSHA1))
+            if(bHash)
             {
                 InstallModuleProcess installModuleProcess;
                 QObject::connect(&installModuleProcess,SIGNAL(infoMessage(QString)),pConsoleOutput,SLOT(infoMessage(QString)));
                 QObject::connect(&installModuleProcess,SIGNAL(errorMessage(QString)),pConsoleOutput,SLOT(errorMessage(QString)));
-                installModuleProcess.setData(pOptions,QList<QString>()<<sFileName);
-
+                installModuleProcess.setData(sDataPath,sRootPath,QList<QString>()<<sModuleFileName);
                 installModuleProcess.process();
             }
             else
             {
-                pConsoleOutput->errorMessage(QString("Invalid SHA1: %1").arg(sFileName));
+                pConsoleOutput->errorMessage(QString("Invalid SHA1: %1").arg(sModuleFileName));
             }
         }
         else
@@ -124,7 +198,7 @@ void installModules(XPLUGINMANAGER::OPTIONS *pOptions,Utils::MODULES_DATA *pModu
     }
 }
 
-void removeModules(XPLUGINMANAGER::OPTIONS *pOptions,Utils::MODULES_DATA *pModulesData,ConsoleOutput *pConsoleOutput,QList<QString> *pListModuleNames)
+void removeModules(QString sDataPath, QString sRootPath,Utils::MODULES_DATA *pModulesData,ConsoleOutput *pConsoleOutput,QList<QString> *pListModuleNames)
 {
     int nCount=pListModuleNames->count();
 
@@ -137,8 +211,7 @@ void removeModules(XPLUGINMANAGER::OPTIONS *pOptions,Utils::MODULES_DATA *pModul
             RemoveModuleProcess removeModuleProcess;
             QObject::connect(&removeModuleProcess,SIGNAL(infoMessage(QString)),pConsoleOutput,SLOT(infoMessage(QString)));
             QObject::connect(&removeModuleProcess,SIGNAL(errorMessage(QString)),pConsoleOutput,SLOT(errorMessage(QString)));
-            removeModuleProcess.setData(pOptions,QList<QString>()<<mdata.sName);
-
+            removeModuleProcess.setData(sDataPath,sRootPath,QList<QString>()<<mdata.sName);
             removeModuleProcess.process();
         }
         else
@@ -171,9 +244,24 @@ int main(int argc, char *argv[])
 
     QCoreApplication app(argc, argv);
 
-    XPLUGINMANAGER::OPTIONS options={};
+    XOptions xOptions;
+    xOptions.setName(X_OPTIONSFILE);
 
-    Utils::loadOptions(&options);
+    QList<XOptions::ID> listIDs;
+
+    listIDs.append(XOptions::ID_DATAPATH);
+    listIDs.append(XOptions::ID_ROOTPATH);
+    listIDs.append(XOptions::ID_JSON);
+
+    xOptions.setValueIDs(listIDs);
+
+    QMap<XOptions::ID, QVariant> mapDefaultValues;
+
+    mapDefaultValues.insert(XOptions::ID_JSON,X_JSON_DEFAULT);
+
+    xOptions.setDefaultValues(mapDefaultValues);
+
+    xOptions.load();
 
     ConsoleOutput consoleOutput;
     QCommandLineParser parser;
@@ -246,81 +334,81 @@ int main(int argc, char *argv[])
 
         if(bIsSetGlobalRootPath)
         {
-            options.sRootPath=parser.value(clSetGlobalRootPath);
+            xOptions.setValue(XOptions::ID_ROOTPATH,parser.value(clSetGlobalRootPath));
 
-            if(options.sRootPath!="")
+            if(xOptions.getRootPath()!="")
             {
-                XBinary::createDirectory(XBinary::convertPathName(options.sRootPath));
+                XBinary::createDirectory(XBinary::convertPathName(xOptions.getRootPath()));
             }
 
-            if(XBinary::isDirectoryExists(XBinary::convertPathName(options.sRootPath)))
+            if(XBinary::isDirectoryExists(XBinary::convertPathName(xOptions.getRootPath())))
             {
-                consoleOutput.infoMessage(QString("Set a global root path: %1").arg(options.sRootPath));
+                consoleOutput.infoMessage(QString("Set a global root path: %1").arg(xOptions.getRootPath()));
             }
             else
             {
-                options.sRootPath="";
-                consoleOutput.errorMessage(QString("Invalid root path: %1").arg(options.sRootPath));
+                xOptions.clearValue(XOptions::ID_ROOTPATH);
+                consoleOutput.errorMessage(QString("Invalid root path: %1").arg(xOptions.getRootPath()));
             }
         }
         if(bIsSetGlobalDataPath)
         {
-            options.sDataPath=parser.value(clSetGlobalDataPath);
+            xOptions.setValue(XOptions::ID_DATAPATH,parser.value(clSetGlobalDataPath));
 
-            if(options.sDataPath!="")
+            if(xOptions.getDataPath()!="")
             {
-                XBinary::createDirectory(XBinary::convertPathName(options.sDataPath));
+                XBinary::createDirectory(XBinary::convertPathName(xOptions.getDataPath()));
             }
 
-            if(XBinary::isDirectoryExists(XBinary::convertPathName(options.sDataPath)))
+            if(XBinary::isDirectoryExists(XBinary::convertPathName(xOptions.getDataPath())))
             {
-                consoleOutput.infoMessage(QString("Set a global data path: %1").arg(options.sDataPath));
+                consoleOutput.infoMessage(QString("Set a global data path: %1").arg(xOptions.getDataPath()));
             }
             else
             {
-                options.sDataPath="";
-                consoleOutput.errorMessage(QString("Invalid data path: %1").arg(options.sDataPath));
+                xOptions.clearValue(XOptions::ID_DATAPATH);
+                consoleOutput.errorMessage(QString("Invalid data path: %1").arg(xOptions.getDataPath()));
             }
         }
         if(bIsSetGlobalJSONLink)
         {
-            options.sJSONLink=parser.value(clSetGlobalJSONLink);
-            consoleOutput.infoMessage(QString("Set a global JSON link: %1").arg(options.sJSONLink));
+            xOptions.setValue(XOptions::ID_JSON,parser.value(clSetGlobalJSONLink));
+            consoleOutput.infoMessage(QString("Set a global JSON link: %1").arg(xOptions.getJson()));
         }
 
-        Utils::saveOptions(&options);
+        xOptions.save();
     }
 
     if(parser.isSet(clSetRootPath))
     {
-        options.sRootPath=parser.value(clSetRootPath);
+        xOptions.setValue(XOptions::ID_ROOTPATH,parser.value(clSetRootPath));
     }
 
     bool bRootPathPresent=false;
     bool bDataPathPresent=false;
 
-    if(options.sRootPath!="")
+    if(xOptions.getRootPath()!="")
     {
-        XBinary::createDirectory(XBinary::convertPathName(options.sRootPath));
-        bRootPathPresent=XBinary::isDirectoryExists(XBinary::convertPathName(options.sRootPath));
+        XBinary::createDirectory(XBinary::convertPathName(xOptions.getRootPath()));
+        bRootPathPresent=XBinary::isDirectoryExists(XBinary::convertPathName(xOptions.getRootPath()));
     }
 
-    if(options.sDataPath!="")
+    if(xOptions.getDataPath()!="")
     {
-        XBinary::createDirectory(XBinary::convertPathName(options.sDataPath));
-        XBinary::createDirectory(XBinary::convertPathName(options.sDataPath)+QDir::separator()+"installed");
-        XBinary::createDirectory(XBinary::convertPathName(options.sDataPath)+QDir::separator()+"modules");
-        bDataPathPresent=XBinary::isDirectoryExists(XBinary::convertPathName(options.sDataPath));
+        XBinary::createDirectory(XBinary::convertPathName(xOptions.getDataPath()));
+        XBinary::createDirectory(XBinary::convertPathName(xOptions.getDataPath())+QDir::separator()+"installed");
+        XBinary::createDirectory(XBinary::convertPathName(xOptions.getDataPath())+QDir::separator()+"modules");
+        bDataPathPresent=XBinary::isDirectoryExists(XBinary::convertPathName(xOptions.getDataPath()));
     }
 
     if(!bRootPathPresent)
     {
-        consoleOutput.errorMessage(QString("Invalid root path: %1").arg(options.sRootPath));
+        consoleOutput.errorMessage(QString("Invalid root path: %1").arg(xOptions.getRootPath()));
     }
 
     if(!bDataPathPresent)
     {
-        consoleOutput.errorMessage(QString("Invalid data path: %1").arg(options.sDataPath));
+        consoleOutput.errorMessage(QString("Invalid data path: %1").arg(xOptions.getDataPath()));
     }
 
     if(parser.isSet(clCreatePlugin))
@@ -352,7 +440,7 @@ int main(int argc, char *argv[])
             CreateModuleProcess createModuleProcess;
             QObject::connect(&createModuleProcess,SIGNAL(infoMessage(QString)),&consoleOutput,SLOT(infoMessage(QString)));
             QObject::connect(&createModuleProcess,SIGNAL(errorMessage(QString)),&consoleOutput,SLOT(errorMessage(QString)));
-            createModuleProcess.setData(&mdata);
+            createModuleProcess.setData(&mdata,true);
             createModuleProcess.process();
 
             nReturnCode=PLGMNGREXITCODE_PLUGINCREATED;
@@ -415,10 +503,13 @@ int main(int argc, char *argv[])
 
         consoleOutput.infoMessage(QString("Update server list."));
 
+        QString sServerListFileName=Utils::getServerListFileName(xOptions.getDataPath());
+        QString sServerLastestListFileName=Utils::getServerLastestListFileName(xOptions.getDataPath());
+
         Utils::WEB_RECORD record={};
 
-        record.sFileName=Utils::getServerListFileName(&options);
-        record.sLink=options.sJSONLink;
+        record.sFileName=sServerLastestListFileName;
+        record.sLink=xOptions.getJson();
 
         GetFileFromServerProcess getFileFromServerProcess;
         QObject::connect(&getFileFromServerProcess,SIGNAL(infoMessage(QString)),&consoleOutput,SLOT(infoMessage(QString)));
@@ -426,6 +517,17 @@ int main(int argc, char *argv[])
         getFileFromServerProcess.setData(QList<Utils::WEB_RECORD>()<<record);
 
         getFileFromServerProcess.process();
+
+        if(Utils::isGithubPresent(sServerLastestListFileName))
+        {
+            UpdateGitProcess updateGitProcess;
+            QObject::connect(&updateGitProcess,SIGNAL(infoMessage(QString)),&consoleOutput,SLOT(infoMessage(QString)));
+            QObject::connect(&updateGitProcess,SIGNAL(errorMessage(QString)),&consoleOutput,SLOT(errorMessage(QString)));
+            updateGitProcess.setData(sServerLastestListFileName);
+            updateGitProcess.process();
+        }
+
+        Utils::updateServerList(sServerListFileName,sServerLastestListFileName);
 
         nReturnCode=PLGMNGREXITCODE_SERVERLISTUPDATED;
     }
@@ -442,7 +544,7 @@ int main(int argc, char *argv[])
 
         if(bRootPathPresent&&bDataPathPresent)
         {
-            Utils::MODULES_DATA modulesData=Utils::getModulesData(&options);
+            Utils::MODULES_DATA modulesData=Utils::getModulesData(xOptions.getDataPath());
 
             if(parser.isSet(clShowServerList))
             {
@@ -506,7 +608,7 @@ int main(int argc, char *argv[])
 
                 QList<QString> listModules=parser.positionalArguments();
 
-                installModules(&options,&modulesData,&consoleOutput,&listModules);
+                installModules(xOptions.getDataPath(),xOptions.getRootPath(),&modulesData,&consoleOutput,&listModules);
 
                 nReturnCode=PLGMNGREXITCODE_INSTALLPLUGINS;
             }
@@ -516,7 +618,7 @@ int main(int argc, char *argv[])
 
                 QList<QString> listFiles=parser.positionalArguments();
 
-                installFiles(&options,&consoleOutput,&listFiles);
+                installFiles(xOptions.getDataPath(),xOptions.getRootPath(),&consoleOutput,&listFiles);
 
                 nReturnCode=PLGMNGREXITCODE_INSTALLFILES;
             }
@@ -543,7 +645,7 @@ int main(int argc, char *argv[])
                     }
                 }
 
-                installModules(&options,&modulesData,&consoleOutput,&_listModules);
+                installModules(xOptions.getDataPath(),xOptions.getRootPath(),&modulesData,&consoleOutput,&_listModules);
 
                 nReturnCode=PLGMNGREXITCODE_UPDATEPLUGINS;
             }
@@ -553,7 +655,7 @@ int main(int argc, char *argv[])
 
                 QList<QString> listModules=parser.positionalArguments();
 
-                removeModules(&options,&modulesData,&consoleOutput,&listModules);
+                removeModules(xOptions.getDataPath(),xOptions.getRootPath(),&modulesData,&consoleOutput,&listModules);
 
                 nReturnCode=PLGMNGREXITCODE_REMOVEPLUGINS;
             }
@@ -565,7 +667,7 @@ int main(int argc, char *argv[])
 
                     QList<QString> listModules=Utils::getNamesFromWebRecords(&(modulesData.listUpdates));
 
-                    installModules(&options,&modulesData,&consoleOutput,&listModules);
+                    installModules(xOptions.getDataPath(),xOptions.getRootPath(),&modulesData,&consoleOutput,&listModules);
 
                     nReturnCode=PLGMNGREXITCODE_UPDATEALL;
                 }

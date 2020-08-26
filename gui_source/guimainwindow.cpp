@@ -21,8 +21,8 @@
 #include "guimainwindow.h"
 #include "ui_guimainwindow.h"
 
-GuiMainWindow::GuiMainWindow(QWidget *parent)
-    : QMainWindow(parent)
+GuiMainWindow::GuiMainWindow(QWidget *pParent)
+    : QMainWindow(pParent)
     , ui(new Ui::GuiMainWindow)
 {
     ui->setupUi(this);
@@ -31,14 +31,33 @@ GuiMainWindow::GuiMainWindow(QWidget *parent)
 
     setAcceptDrops(true);
 
-    Utils::loadOptions(&options);
+    xOptions.setName(X_OPTIONSFILE);
 
-    if(!XBinary::isDirectoryExists(XBinary::convertPathName(options.sRootPath)))
+    QList<XOptions::ID> listIDs;
+
+    listIDs.append(XOptions::ID_STAYONTOP);
+    listIDs.append(XOptions::ID_DATAPATH);
+    listIDs.append(XOptions::ID_ROOTPATH);
+    listIDs.append(XOptions::ID_JSON);
+
+    xOptions.setValueIDs(listIDs);
+
+    QMap<XOptions::ID, QVariant> mapDefaultValues;
+
+    mapDefaultValues.insert(XOptions::ID_JSON,X_JSON_DEFAULT);
+
+    xOptions.setDefaultValues(mapDefaultValues);
+
+    xOptions.load();
+
+    xOptions.adjustStayOnTop(this);
+
+    if(!XBinary::isDirectoryExists(XBinary::convertPathName(xOptions.getRootPath())))
     {
-        options.sRootPath="";
+        xOptions.clearValue(XOptions::ID_ROOTPATH);
     }
 
-    if(options.sRootPath=="")
+    if(xOptions.getRootPath()=="")
     {
         QString sDirectoryName;
 
@@ -52,18 +71,18 @@ GuiMainWindow::GuiMainWindow(QWidget *parent)
 
         if(sDirectoryName!="")
         {
-            options.sRootPath=sDirectoryName;
+            xOptions.setValue(XOptions::ID_ROOTPATH,sDirectoryName);
         }
     }
 
-    if(options.sRootPath=="")
+    if(xOptions.getRootPath()=="")
     {
         exit(1);
     }
 
-    XBinary::createDirectory(XBinary::convertPathName(options.sDataPath));
-    XBinary::createDirectory(XBinary::convertPathName(options.sDataPath)+QDir::separator()+"installed");
-    XBinary::createDirectory(XBinary::convertPathName(options.sDataPath)+QDir::separator()+"modules");
+    XBinary::createDirectory(XBinary::convertPathName(xOptions.getDataPath()));
+    XBinary::createDirectory(XBinary::convertPathName(xOptions.getDataPath())+QDir::separator()+"installed");
+    XBinary::createDirectory(XBinary::convertPathName(xOptions.getDataPath())+QDir::separator()+"modules");
 
     setAcceptDrops(true);
 
@@ -75,7 +94,7 @@ GuiMainWindow::GuiMainWindow(QWidget *parent)
     }
     else
     {
-        if(!XBinary::isFileExists(Utils::getServerListFileName(&options)))
+        if(!XBinary::isFileExists(Utils::getServerListFileName(xOptions.getDataPath())))
         {
             updateJsonList();
         }
@@ -89,7 +108,7 @@ GuiMainWindow::GuiMainWindow(QWidget *parent)
 
 GuiMainWindow::~GuiMainWindow()
 {
-    Utils::saveOptions(&options);
+    xOptions.save();
 
     delete ui;
 }
@@ -104,6 +123,7 @@ void GuiMainWindow::adjustTable(QTableWidget *pTableWidget)
     pTableWidget->setHorizontalHeaderItem(CN_32,            new QTableWidgetItem(tr("32")));
     pTableWidget->setHorizontalHeaderItem(CN_64,            new QTableWidgetItem(tr("64")));
     pTableWidget->setHorizontalHeaderItem(CN_VERSION,       new QTableWidgetItem(tr("Version")));
+    pTableWidget->setHorizontalHeaderItem(CN_DATE,          new QTableWidgetItem(tr("Date")));
     pTableWidget->setHorizontalHeaderItem(CN_INSTALL,       new QTableWidgetItem(""));
     pTableWidget->setHorizontalHeaderItem(CN_REMOVE,        new QTableWidgetItem(""));
 
@@ -112,6 +132,7 @@ void GuiMainWindow::adjustTable(QTableWidget *pTableWidget)
     pTableWidget->setColumnWidth(CN_32,                     10);
     pTableWidget->setColumnWidth(CN_64,                     10);
     pTableWidget->setColumnWidth(CN_VERSION,                80);
+    pTableWidget->setColumnWidth(CN_DATE,                   80);
     pTableWidget->setColumnWidth(CN_INSTALL,                60);
     pTableWidget->setColumnWidth(CN_REMOVE,                 60);
 
@@ -120,6 +141,7 @@ void GuiMainWindow::adjustTable(QTableWidget *pTableWidget)
     pTableWidget->horizontalHeader()->setSectionResizeMode(CN_32,           QHeaderView::ResizeToContents);
     pTableWidget->horizontalHeader()->setSectionResizeMode(CN_64,           QHeaderView::ResizeToContents);
     pTableWidget->horizontalHeader()->setSectionResizeMode(CN_VERSION,      QHeaderView::ResizeToContents);
+    pTableWidget->horizontalHeader()->setSectionResizeMode(CN_DATE,         QHeaderView::ResizeToContents);
     pTableWidget->horizontalHeader()->setSectionResizeMode(CN_INSTALL,      QHeaderView::Interactive);
     pTableWidget->horizontalHeader()->setSectionResizeMode(CN_REMOVE,       QHeaderView::Interactive);
 }
@@ -133,32 +155,47 @@ void GuiMainWindow::fillTable(QTableWidget *pTableWidget, QList<Utils::MDATA> *p
     pTableWidget->setRowCount(0);
     pTableWidget->setRowCount(nCount);
 
+    QColor colDisabled=QWidget::palette().color(QPalette::Window);
+
     for(int i=0;i<nCount;i++)
     {
+        Utils::STATUS status=pMapStatus->value(pMData->at(i).sName);
+
         QTableWidgetItem *pItemName=new QTableWidgetItem;
+        QTableWidgetItem *pItemInfo=new QTableWidgetItem;
+        QCheckBox *pCheckBoxIs32=new QCheckBox(this);
+        QCheckBox *pCheckBoxIs64=new QCheckBox(this);
+        QTableWidgetItem *pItemVersion=new QTableWidgetItem;
+        QTableWidgetItem *pItemDate=new QTableWidgetItem;
+
+        if(status.bUpdate)
+        {
+            pItemName->setBackgroundColor(colDisabled);
+            pItemInfo->setBackgroundColor(colDisabled);
+            pItemVersion->setBackgroundColor(colDisabled);
+            pItemDate->setBackgroundColor(colDisabled);
+        }
+
         pItemName->setText(pMData->at(i).sName);
-        pItemName->setData(Qt::UserRole,pMData->at(i).sName);
+        pItemName->setData(Qt::UserRole,pMData->at(i).sName);       
         pTableWidget->setItem(i,CN_NAME,pItemName);
 
-        QTableWidgetItem *pItemInfo=new QTableWidgetItem;
         pItemInfo->setText(pMData->at(i).sInfo);
         pTableWidget->setItem(i,CN_INFO,pItemInfo);
 
-        QCheckBox *pCheckBoxIs32=new QCheckBox(this);
         pCheckBoxIs32->setEnabled(false);
         pCheckBoxIs32->setChecked(pMData->at(i).bIs32);
         pTableWidget->setCellWidget(i,CN_32,pCheckBoxIs32);
 
-        QCheckBox *pCheckBoxIs64=new QCheckBox(this);
         pCheckBoxIs64->setEnabled(false);
         pCheckBoxIs64->setChecked(pMData->at(i).bIs64);
         pTableWidget->setCellWidget(i,CN_64,pCheckBoxIs64);
 
-        QTableWidgetItem *pItemVersion=new QTableWidgetItem;
         pItemVersion->setText(pMData->at(i).sVersion);
         pTableWidget->setItem(i,CN_VERSION,pItemVersion);
 
-        Utils::STATUS status=pMapStatus->value(pMData->at(i).sName);
+        pItemDate->setText(pMData->at(i).sDate);
+        pTableWidget->setItem(i,CN_DATE,pItemDate);
 
         if(status.bInstall||status.bUpdate)
         {
@@ -221,24 +258,11 @@ void GuiMainWindow::openPlugin()
 
 void GuiMainWindow::optionsDialog()
 {
-    DialogOptions dialogOptions(this,&options);
+    DialogOptions dialogOptions(this,&xOptions);
 
     dialogOptions.exec();
 
-    Qt::WindowFlags wf=windowFlags();
-
-    if(options.bStayOnTop)
-    {
-        wf|=Qt::WindowStaysOnTopHint;
-    }
-    else
-    {
-        wf&=~(Qt::WindowStaysOnTopHint);
-    }
-
-    setWindowFlags(wf);
-
-    show();
+    xOptions.adjustStayOnTop(this);
 }
 
 void GuiMainWindow::exitProgram()
@@ -253,7 +277,7 @@ void GuiMainWindow::errorMessage(QString sMessage)
 
 void GuiMainWindow::getModules()
 {
-    modulesData=Utils::getModulesData(&options);
+    modulesData=Utils::getModulesData(xOptions.getDataPath());
 
     fillTable(ui->tableWidgetServerList,&(modulesData.listServerList),&(modulesData.mapStatus));
     fillTable(ui->tableWidgetInstalled,&(modulesData.listInstalled),&(modulesData.mapStatus));
@@ -265,7 +289,7 @@ void GuiMainWindow::openPlugin(QString sFileName)
 {
     if(Utils::isPluginValid(sFileName))
     {
-        DialogInstallModule dialogInstallModule(this,&options);
+        DialogInstallModule dialogInstallModule(this,xOptions.getDataPath(),xOptions.getRootPath());
         connect(&dialogInstallModule,SIGNAL(errorMessage(QString)),this,SLOT(errorMessage(QString)));
 
         dialogInstallModule.setFileName(sFileName);
@@ -281,16 +305,30 @@ void GuiMainWindow::openPlugin(QString sFileName)
 
 void GuiMainWindow::updateJsonList()
 {
+    QString sServerListFileName=Utils::getServerListFileName(xOptions.getDataPath());
+    QString sServerLastestListFileName=Utils::getServerLastestListFileName(xOptions.getDataPath());
+
     Utils::WEB_RECORD record={};
 
-    record.sFileName=Utils::getServerListFileName(&options);
-    record.sLink=options.sJSONLink;
+    record.sFileName=sServerLastestListFileName;
+    record.sLink=xOptions.getJson();
 
     DialogGetFileFromServerProcess dialogGetFileFromServer(this,QList<Utils::WEB_RECORD>()<<record);
 
     connect(&dialogGetFileFromServer,SIGNAL(errorMessage(QString)),this,SLOT(errorMessage(QString)));
 
     dialogGetFileFromServer.exec();
+
+    if(Utils::isGithubPresent(sServerLastestListFileName))
+    {
+        DialogUpdateGitProcess dialogUpdateGitProcess(this,sServerLastestListFileName);
+
+        connect(&dialogUpdateGitProcess,SIGNAL(errorMessage(QString)),this,SLOT(errorMessage(QString)));
+
+        dialogUpdateGitProcess.exec();
+    }
+
+    Utils::updateServerList(sServerListFileName,sServerLastestListFileName);
 }
 
 void GuiMainWindow::installButtonSlot()
@@ -317,13 +355,15 @@ void GuiMainWindow::installPlugin(QString sName)
 
         if(mdata.sName!="")
         {
-            DialogInstallModule dialogInstallModule(this,&options);
+            DialogInstallModule dialogInstallModule(this,xOptions.getDataPath(),xOptions.getRootPath());
             connect(&dialogInstallModule,SIGNAL(errorMessage(QString)),this,SLOT(errorMessage(QString)));
 
-            dialogInstallModule.setMData(&mdata);
-            dialogInstallModule.exec();
+            if(dialogInstallModule.setMData(&mdata))
+            {
+                dialogInstallModule.exec();
 
-            getModules();
+                getModules();
+            }
         }
     }
 }
@@ -340,7 +380,7 @@ void GuiMainWindow::installPlugins(QList<QString> *pListNames)
 
         if(mdata.sName!="")
         {
-            QString sFileName=Utils::getModuleFileName(&options,mdata.sName);
+            QString sFileName=Utils::getModuleFileName(xOptions.getDataPath(),mdata.sName);
 
             if(XBinary::isFileHashValid(XBinary::HASH_SHA1,sFileName,mdata.sSHA1))
             {
@@ -351,7 +391,7 @@ void GuiMainWindow::installPlugins(QList<QString> *pListNames)
 
     if(listFileNames.count())
     {
-        DialogInstallModuleProcess dialogInstallModuleProcess(this,&options,listFileNames);
+        DialogInstallModuleProcess dialogInstallModuleProcess(this,xOptions.getDataPath(),xOptions.getRootPath(),listFileNames);
 
         connect(&dialogInstallModuleProcess,SIGNAL(errorMessage(QString)),this,SLOT(errorMessage(QString)));
 
@@ -365,7 +405,7 @@ void GuiMainWindow::removePlugin(QString sName)
 {
     if(sName!="")
     {
-        DialogRemoveModule dialogRemoveModule(this,&options,sName);
+        DialogRemoveModule dialogRemoveModule(this,xOptions.getDataPath(),xOptions.getRootPath(),sName);
 
         connect(&dialogRemoveModule,SIGNAL(errorMessage(QString)),this,SLOT(errorMessage(QString)));
 
@@ -385,9 +425,9 @@ void GuiMainWindow::infoPlugin(Utils::MDATA *pMData)
     }
 }
 
-void GuiMainWindow::dragEnterEvent(QDragEnterEvent *event)
+void GuiMainWindow::dragEnterEvent(QDragEnterEvent *pEvent)
 {
-    const QMimeData* mimeData=event->mimeData();
+    const QMimeData* mimeData=pEvent->mimeData();
 
     if(mimeData->hasUrls())
     {
@@ -399,20 +439,20 @@ void GuiMainWindow::dragEnterEvent(QDragEnterEvent *event)
 
             if(Utils::isPluginValid(sFileName))
             {
-                event->acceptProposedAction();
+                pEvent->acceptProposedAction();
             }
         }
     }
 }
 
-void GuiMainWindow::dragMoveEvent(QDragMoveEvent *event)
+void GuiMainWindow::dragMoveEvent(QDragMoveEvent *pEvent)
 {
-    event->acceptProposedAction();
+    pEvent->acceptProposedAction();
 }
 
-void GuiMainWindow::dropEvent(QDropEvent *event)
+void GuiMainWindow::dropEvent(QDropEvent *pEvent)
 {
-    const QMimeData* mimeData=event->mimeData();
+    const QMimeData* mimeData=pEvent->mimeData();
 
     if(mimeData->hasUrls())
     {

@@ -18,43 +18,36 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 //
-#ifndef DIALOGCREATEMODULEPROCESS_H
-#define DIALOGCREATEMODULEPROCESS_H
+#ifndef CONVERTPROCESS_H
+#define CONVERTPROCESS_H
 
-#include <QDialog>
-#include <QThread>
-#include <QTimer>
-#include "../createmoduleprocess.h"
-#include "../utils.h"
+#include <QObject>
+#include <QElapsedTimer>
+#include "utils.h"
+#include "xzip.h"
 
-namespace Ui {
-class DialogCreateModuleProcess;
-}
-
-class DialogCreateModuleProcess : public QDialog
+class ConvertProcess : public QObject
 {
     Q_OBJECT
-
 public:
-    explicit DialogCreateModuleProcess(QWidget *pParent, Utils::MDATA *pMData,bool bCreateInfoFile);
-    ~DialogCreateModuleProcess();
-
-private slots:
-    void on_pushButtonCancel_clicked();
-    void onCompleted(qint64 nElapsed);
-    void timerSlot();
+    explicit ConvertProcess(QObject *pParent=nullptr);
+    void setData(Utils::MDATA *pMData,QString sDataPath);
+    void stop();
+    Utils::STATS getCurrentStats();
 
 signals:
     void errorMessage(QString sMessage);
+    void infoMessage(QString sMessage);
+    void completed(qint64 nElapsedTime);
+
+public slots:
+    void process();
 
 private:
-    Ui::DialogCreateModuleProcess *ui;
     Utils::MDATA *pMData;
-
-    CreateModuleProcess *pCreateModuleProcess;
-    QThread *pThread;
-    bool bIsRun;
-    QTimer *pTimer;
+    bool bIsStop;
+    Utils::STATS currentStats;
+    QString sDataPath;
 };
 
-#endif // DIALOGCREATEMODULEPROCESS_H
+#endif // CONVERTPROCESS_H

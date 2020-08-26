@@ -20,15 +20,16 @@
 //
 #include "installmoduleprocess.h"
 
-InstallModuleProcess::InstallModuleProcess(QObject *parent) : QObject(parent)
+InstallModuleProcess::InstallModuleProcess(QObject *pParent) : QObject(pParent)
 {
     bIsStop=false;
     currentStats={};
 }
 
-void InstallModuleProcess::setData(XPLUGINMANAGER::OPTIONS *pOptions, QList<QString> listModuleFileNames)
+void InstallModuleProcess::setData(QString sDataPath, QString sRootPath, QList<QString> listModuleFileNames)
 {
-    this->pOptions=pOptions;
+    this->sDataPath=XBinary::convertPathName(sDataPath);
+    this->sRootPath=XBinary::convertPathName(sRootPath);
     this->listModuleFileNames=listModuleFileNames;
 }
 
@@ -61,7 +62,7 @@ void InstallModuleProcess::process()
 
         if(file.open(QIODevice::ReadOnly))
         {
-            Utils::MDATA mdata=Utils::getMDataFromZip(&file,XBinary::convertPathName(pOptions->sRootPath));
+            Utils::MDATA mdata=Utils::getMDataFromZip(&file,XBinary::convertPathName(sRootPath));
 
             XZip zip(&file);
 
@@ -71,40 +72,40 @@ void InstallModuleProcess::process()
 
             for(qint32 j=0;(j<currentStats.nTotalFile)&&(!bIsStop);j++)
             {
-                Utils::INSTALL_RECORD record=mdata.listInstallRecords.at(j);
+                Utils::HANDLE_RECORD record=mdata.listInstallRecords.at(j);
 
-                currentStats.sFile=QString("%1: %2").arg(tr("Install file")).arg(record.sFullPath);
+                currentStats.sFile=QString("%1: %2").arg(tr("Install file")).arg(sRootPath+QDir::separator()+record.sPath);
                 emit infoMessage(currentStats.sFile);
 
-                if(record.bIsFile)
+                if(record.action==Utils::ACTION_COPYFILE)
                 {
-                    if(XBinary::isFileExists(record.sFullPath))
+                    if(XBinary::isFileExists(sRootPath+QDir::separator()+record.sPath))
                     {
-                        if(!XBinary::removeFile(record.sFullPath))
+                        if(!XBinary::removeFile(sRootPath+QDir::separator()+record.sPath))
                         {
-                            emit errorMessage(QString("%1: %2").arg(tr("Cannot remove file")).arg(record.sFullPath));
+                            emit errorMessage(QString("%1: %2").arg(tr("Cannot remove file")).arg(sRootPath+QDir::separator()+record.sPath));
                             bIsStop=true;
                         }
                     }
 
                     XArchive::RECORD archiveRecord=XArchive::getArchiveRecord("files/"+record.sPath,&listZipRecords);
-                    zip.decompressToFile(&archiveRecord,record.sFullPath);
+                    zip.decompressToFile(&archiveRecord,sRootPath+QDir::separator()+record.sPath);
 
-                    if(!XBinary::isFileHashValid(XBinary::HASH_SHA1,record.sFullPath,record.sSHA1))
+                    if(!XBinary::isFileHashValid(XBinary::HASH_SHA1,sRootPath+QDir::separator()+record.sPath,record.sSHA1))
                     {
-                        emit errorMessage(QString("%1: %2").arg(tr("Invalid file HASH")).arg(record.sFullPath));
+                        emit errorMessage(QString("%1: %2").arg(tr("Invalid file HASH")).arg(sRootPath+QDir::separator()+record.sPath));
                         bIsStop=true;
                     }
                 }
-                else
+                else if(record.action==Utils::ACTION_MAKEDIRECTORY)
                 {
-                    XBinary::createDirectory(record.sFullPath);
+                    XBinary::createDirectory(sRootPath+QDir::separator()+record.sPath);
                 }
 
                 currentStats.nCurrentFile=j+1;
             }
 
-            QString sInfoFileName=Utils::getInstalledJsonFileName(pOptions,mdata.sName);
+            QString sInfoFileName=Utils::getInstalledJsonFileName(sDataPath,mdata.sName);
 
             if(XBinary::isFileExists(sInfoFileName))
             {

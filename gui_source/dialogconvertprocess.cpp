@@ -18,30 +18,31 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 //
-#include "dialogcreatemoduleprocess.h"
-#include "ui_dialogcreatemoduleprocess.h"
+#include "dialogconvertprocess.h"
+#include "ui_dialogconvertprocess.h"
 
-DialogCreateModuleProcess::DialogCreateModuleProcess(QWidget *pParent, Utils::MDATA *pMData, bool bCreateInfoFile) :
+DialogConvertProcess::DialogConvertProcess(QWidget *pParent, Utils::MDATA *pMData, QString sDataPath) :
     QDialog(pParent),
-    ui(new Ui::DialogCreateModuleProcess)
+    ui(new Ui::DialogConvertProcess)
 {
     ui->setupUi(this);
 
     this->pMData=pMData;
+    this->sDataPath=sDataPath;
 
-    pCreateModuleProcess=new CreateModuleProcess;
+    pConvertProcess=new ConvertProcess;
     pThread=new QThread;
 
-    pCreateModuleProcess->moveToThread(pThread);
+    pConvertProcess->moveToThread(pThread);
 
-    connect(pThread, SIGNAL(started()), pCreateModuleProcess, SLOT(process()));
-    connect(pCreateModuleProcess, SIGNAL(completed(qint64)), this, SLOT(onCompleted(qint64)));
-    connect(pCreateModuleProcess,SIGNAL(errorMessage(QString)),this,SIGNAL(errorMessage(QString)));
+    connect(pThread, SIGNAL(started()), pConvertProcess, SLOT(process()));
+    connect(pConvertProcess, SIGNAL(completed(qint64)), this, SLOT(onCompleted(qint64)));
+    connect(pConvertProcess,SIGNAL(errorMessage(QString)),this,SIGNAL(errorMessage(QString)));
 
     pTimer=new QTimer(this);
     connect(pTimer, SIGNAL(timeout()), this, SLOT(timerSlot()));
 
-    pCreateModuleProcess->setData(pMData,bCreateInfoFile);
+    pConvertProcess->setData(pMData,sDataPath);
 
     bIsRun=true;
 
@@ -49,14 +50,14 @@ DialogCreateModuleProcess::DialogCreateModuleProcess(QWidget *pParent, Utils::MD
     ui->progressBar->setValue(0);
 
     pThread->start();
-    pTimer->start(1000); // 1 sec
+    pTimer->start(100); // 0.1 sec
 }
 
-DialogCreateModuleProcess::~DialogCreateModuleProcess()
+DialogConvertProcess::~DialogConvertProcess()
 {
     if(bIsRun)
     {
-        pCreateModuleProcess->stop();
+        pConvertProcess->stop();
     }
 
     pTimer->stop();
@@ -67,20 +68,20 @@ DialogCreateModuleProcess::~DialogCreateModuleProcess()
     delete ui;
 
     delete pThread;
-    delete pCreateModuleProcess;
+    delete pConvertProcess;
 }
 
-void DialogCreateModuleProcess::on_pushButtonCancel_clicked()
+void DialogConvertProcess::on_pushButtonCancel_clicked()
 {
     if(bIsRun)
     {
-        pCreateModuleProcess->stop();
+        pConvertProcess->stop();
         pTimer->stop();
         bIsRun=false;
     }
 }
 
-void DialogCreateModuleProcess::onCompleted(qint64 nElapsed)
+void DialogConvertProcess::onCompleted(qint64 nElapsed)
 {
     Q_UNUSED(nElapsed)
     // TODO
@@ -88,14 +89,14 @@ void DialogCreateModuleProcess::onCompleted(qint64 nElapsed)
     this->close();
 }
 
-void DialogCreateModuleProcess::timerSlot()
+void DialogConvertProcess::timerSlot()
 {
-    Utils::STATS stats=pCreateModuleProcess->getCurrentStats();
+    Utils::STATS stats=pConvertProcess->getCurrentStats();
 
-    ui->labelInfo->setText(stats.sFile);
+    ui->labelInfo->setText(stats.sModule);
 
-    if(stats.nTotalFile)
+    if(stats.nTotalModule)
     {
-        ui->progressBar->setValue((int)((stats.nCurrentFile*100)/stats.nTotalFile));
+        ui->progressBar->setValue((int)((stats.nCurrentModule*100)/stats.nTotalModule));
     }
 }

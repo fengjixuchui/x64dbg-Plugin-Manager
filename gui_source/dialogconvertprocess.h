@@ -18,26 +18,26 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 //
-#ifndef DIALOGCREATEMODULEPROCESS_H
-#define DIALOGCREATEMODULEPROCESS_H
+#ifndef DIALOGCONVERTPROCESS_H
+#define DIALOGCONVERTPROCESS_H
 
 #include <QDialog>
 #include <QThread>
 #include <QTimer>
-#include "../createmoduleprocess.h"
+#include "../convertprocess.h"
 #include "../utils.h"
 
 namespace Ui {
-class DialogCreateModuleProcess;
+class DialogConvertProcess;
 }
 
-class DialogCreateModuleProcess : public QDialog
+class DialogConvertProcess : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit DialogCreateModuleProcess(QWidget *pParent, Utils::MDATA *pMData,bool bCreateInfoFile);
-    ~DialogCreateModuleProcess();
+    explicit DialogConvertProcess(QWidget *pParent, Utils::MDATA *pMData, QString sDataPath);
+    ~DialogConvertProcess();
 
 private slots:
     void on_pushButtonCancel_clicked();
@@ -48,13 +48,13 @@ signals:
     void errorMessage(QString sMessage);
 
 private:
-    Ui::DialogCreateModuleProcess *ui;
+    Ui::DialogConvertProcess *ui;
     Utils::MDATA *pMData;
-
-    CreateModuleProcess *pCreateModuleProcess;
+    QString sDataPath;
+    ConvertProcess *pConvertProcess;
     QThread *pThread;
     bool bIsRun;
     QTimer *pTimer;
 };
 
-#endif // DIALOGCREATEMODULEPROCESS_H
+#endif // DIALOGCONVERTPROCESS_H

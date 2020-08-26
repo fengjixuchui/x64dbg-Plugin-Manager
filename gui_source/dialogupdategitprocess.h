@@ -18,26 +18,26 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 //
-#ifndef DIALOGCREATEMODULEPROCESS_H
-#define DIALOGCREATEMODULEPROCESS_H
+#ifndef DIALOGUPDATEGITPROCESS_H
+#define DIALOGUPDATEGITPROCESS_H
 
 #include <QDialog>
 #include <QThread>
 #include <QTimer>
-#include "../createmoduleprocess.h"
+#include "../updategitprocess.h"
 #include "../utils.h"
 
 namespace Ui {
-class DialogCreateModuleProcess;
+class DialogUpdateGitProcess;
 }
 
-class DialogCreateModuleProcess : public QDialog
+class DialogUpdateGitProcess : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit DialogCreateModuleProcess(QWidget *pParent, Utils::MDATA *pMData,bool bCreateInfoFile);
-    ~DialogCreateModuleProcess();
+    explicit DialogUpdateGitProcess(QWidget *pParent, QString sDataPath);
+    ~DialogUpdateGitProcess();
 
 private slots:
     void on_pushButtonCancel_clicked();
@@ -48,13 +48,12 @@ signals:
     void errorMessage(QString sMessage);
 
 private:
-    Ui::DialogCreateModuleProcess *ui;
-    Utils::MDATA *pMData;
-
-    CreateModuleProcess *pCreateModuleProcess;
+    Ui::DialogUpdateGitProcess *ui;
+    QString sDataPath;
+    UpdateGitProcess *pUpdateGitProcess;
     QThread *pThread;
     bool bIsRun;
     QTimer *pTimer;
 };
 
-#endif // DIALOGCREATEMODULEPROCESS_H
+#endif // DIALOGUPDATEGITPROCESS_H
